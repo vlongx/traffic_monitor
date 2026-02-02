@@ -191,4 +191,33 @@ process_traffic() {
 
     echo -e "${CYAN}========================================${PLAIN}"
     echo -e " 📊  流量统计报表"
-    echo -e " ----------------------------------------
+    echo -e " ----------------------------------------"
+    echo -e " 🖥  服务器:   $SERVER_NAME"
+    echo -e " ⬇️  今日下载: ${GREEN}${rx_gib} GiB${PLAIN}"
+    echo -e " ⬆️  今日上传: ${GREEN}${tx_gib} GiB${PLAIN}"
+    echo -e " 💰  今日总计: ${YELLOW}${daily_total_gib} GiB${PLAIN}"
+    echo -e " 📦  本月已用: ${RED}${month_used_gib} GiB${PLAIN}"
+    echo -e " 🔋  本月剩余: ${CYAN}${remain_gib} GiB${PLAIN}"
+    echo -e "${CYAN}========================================${PLAIN}"
+    
+    if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
+        res=$(curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+             -d "chat_id=${TG_CHAT_ID}" \
+             --data-urlencode "text=${MSG}" \
+             -d "parse_mode=HTML")
+        if [[ "$res" == *'"ok":true'* ]]; then
+            echo -e "${GREEN}>> 已推送到 Telegram${PLAIN}"
+        else
+            echo -e "${RED}>> 推送失败! TG返回: $res${PLAIN}"
+        fi
+    fi
+}
+
+check_dependencies
+case "$1" in
+    install) install_script ;;
+    reset) rm -f "$CONFIG_FILE" "$STATE_FILE" "$DATE_FILE"; echo "已重置"; ;;
+    update) process_traffic "quiet" ;;
+    report) process_traffic "report" ;;
+    *) process_traffic "report" ;;
+esac
