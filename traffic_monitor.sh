@@ -34,7 +34,6 @@ check_dependencies() {
             yum install -y curl
         fi
     fi
-    # awk 通常系统自带，若无则安装
     if ! command -v awk &> /dev/null; then
          if [ -f /etc/debian_version ]; then apt-get install -y gawk; fi
     fi
@@ -97,7 +96,7 @@ install_script() {
     read -p "Telegram Chat ID: " input_chat_id
     TG_CHAT_ID=$(echo "${input_chat_id:-""}" | tr -d '[:space:]')
 
-    cat > "$CONFIG_FILE" <<EOF
+    cat > "$CONFIG_FILE" <<CONF
 INTERFACE="$INTERFACE"
 TOTAL_LIMIT_GB="$TOTAL_LIMIT_GB"
 RESET_DAY="$RESET_DAY"
@@ -105,7 +104,7 @@ CALC_MODE="$CALC_MODE"
 SERVER_NAME="$SERVER_NAME"
 TG_BOT_TOKEN="$TG_BOT_TOKEN"
 TG_CHAT_ID="$TG_CHAT_ID"
-EOF
+CONF
 
     local counters=($(get_current_counters "$INTERFACE"))
     local used_bytes=$(echo "$CURRENT_USED_GB * 1073741824" | bc)
@@ -161,7 +160,7 @@ process_traffic() {
 
     [ "$mode" == "quiet" ] && return
 
-    # Report Generation (使用 awk 强制格式化为 0.xx)
+    # Report Generation
     local rx_gib=$(echo "scale=2; $daily_rx / 1073741824" | bc | awk '{printf "%.2f", $0}')
     local tx_gib=$(echo "scale=2; $daily_tx / 1073741824" | bc | awk '{printf "%.2f", $0}')
     local daily_total_gib=$(echo "scale=2; ($daily_rx + $daily_tx) / 1073741824" | bc | awk '{printf "%.2f", $0}')
