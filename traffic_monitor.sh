@@ -34,6 +34,10 @@ check_dependencies() {
             yum install -y curl
         fi
     fi
+    # awk 通常系统自带，若无则安装
+    if ! command -v awk &> /dev/null; then
+         if [ -f /etc/debian_version ]; then apt-get install -y gawk; fi
+    fi
 }
 
 # --- 2. 核心工具函数 ---
@@ -66,10 +70,9 @@ install_script() {
     INTERFACE=${input_iface:-$auto_iface}
     
     read -p "2. 每月总流量限制 (GB) [默认: 1000]: " input_total
-    TOTAL_LIMIT_GB=$(echo "${input_total:-1000}" | tr -cd '0-9.') # 自动清洗非数字字符
+    TOTAL_LIMIT_GB=$(echo "${input_total:-1000}" | tr -cd '0-9.')
     
     read -p "3. 当前已用流量 (GB) [默认: 0]: " input_used
-    # 【修复重点】使用 tr 命令强制只保留数字和小数点，过滤中文符号
     CURRENT_USED_GB=$(echo "${input_used:-0}" | tr -cd '0-9.')
     
     read -p "4. 每月重置日期 (1-31) [默认: 1]: " input_day
@@ -90,13 +93,10 @@ install_script() {
 
     echo -e "${YELLOW}--- Telegram 配置 (可选，回车跳过) ---${PLAIN}"
     read -p "Telegram Bot Token: " input_token
-    # 自动去除非法空格
     TG_BOT_TOKEN=$(echo "${input_token:-""}" | tr -d '[:space:]')
-    
     read -p "Telegram Chat ID: " input_chat_id
     TG_CHAT_ID=$(echo "${input_chat_id:-""}" | tr -d '[:space:]')
 
-    # 写入配置
     cat > "$CONFIG_FILE" <<EOF
 INTERFACE="$INTERFACE"
 TOTAL_LIMIT_GB="$TOTAL_LIMIT_GB"
@@ -107,7 +107,6 @@ TG_BOT_TOKEN="$TG_BOT_TOKEN"
 TG_CHAT_ID="$TG_CHAT_ID"
 EOF
 
-    # 初始化状态
     local counters=($(get_current_counters "$INTERFACE"))
     local used_bytes=$(echo "$CURRENT_USED_GB * 1073741824" | bc)
     local today=$(date +%F)
@@ -121,7 +120,7 @@ EOF
 
 # --- 4. 核心逻辑 ---
 process_traffic() {
-    local mode=$1  # "quiet" or "report"
+    local mode=$1
 
     if [ ! -f "$CONFIG_FILE" ] || [ ! -f "$STATE_FILE" ]; then
         [ "$mode" == "report" ] && echo -e "${RED}未配置，请先运行 install${PLAIN}"
@@ -162,18 +161,18 @@ process_traffic() {
 
     [ "$mode" == "quiet" ] && return
 
-    # Report Generation
-    local rx_gib=$(echo "scale=2; $daily_rx / 1073741824" | bc)
-    local tx_gib=$(echo "scale=2; $daily_tx / 1073741824" | bc)
-    local daily_total_gib=$(echo "scale=2; ($daily_rx + $daily_tx) / 1073741824" | bc)
-    local month_used_gib=$(echo "scale=2; $month_used / 1073741824" | bc)
+    # Report Generation (使用 awk 强制格式化为 0.xx)
+    local rx_gib=$(echo "scale=2; $daily_rx / 1073741824" | bc | awk '{printf "%.2f", $0}')
+    local tx_gib=$(echo "scale=2; $daily_tx / 1073741824" | bc | awk '{printf "%.2f", $0}')
+    local daily_total_gib=$(echo "scale=2; ($daily_rx + $daily_tx) / 1073741824" | bc | awk '{printf "%.2f", $0}')
+    local month_used_gib=$(echo "scale=2; $month_used / 1073741824" | bc | awk '{printf "%.2f", $0}')
+    
     local total_bytes=$(echo "$TOTAL_LIMIT_GB * 1073741824" | bc)
     local remain_bytes=$(echo "$total_bytes - $month_used" | bc)
     if (( $(echo "$remain_bytes < 0" | bc -l) )); then remain_bytes=0; fi
-    local remain_gib=$(echo "scale=2; $remain_bytes / 1073741824" | bc)
+    local remain_gib=$(echo "scale=2; $remain_bytes / 1073741824" | bc | awk '{printf "%.2f", $0}')
     
     local report_time=$(date "+%Y-%m-%d %H:%M:%S")
-
     if [ -z "$SERVER_NAME" ]; then SERVER_NAME=$(hostname); fi
 
     MSG="📊 <b>流量日报</b> 📊
@@ -192,34 +191,4 @@ process_traffic() {
 
     echo -e "${CYAN}========================================${PLAIN}"
     echo -e " 📊  流量统计报表"
-    echo -e " ----------------------------------------"
-    echo -e " 🖥  服务器:   $SERVER_NAME"
-    echo -e " ⬇️  今日下载: ${GREEN}${rx_gib} GiB${PLAIN}"
-    echo -e " ⬆️  今日上传: ${GREEN}${tx_gib} GiB${PLAIN}"
-    echo -e " 💰  今日总计: ${YELLOW}${daily_total_gib} GiB${PLAIN}"
-    echo -e " 📦  本月已用: ${RED}${month_used_gib} GiB${PLAIN}"
-    echo -e " 🔋  本月剩余: ${CYAN}${remain_gib} GiB${PLAIN}"
-    echo -e "${CYAN}========================================${PLAIN}"
-    
-    if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
-        res=$(curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
-             -d "chat_id=${TG_CHAT_ID}" \
-             --data-urlencode "text=${MSG}" \
-             -d "parse_mode=HTML")
-        
-        if [[ "$res" == *'"ok":true'* ]]; then
-            echo -e "${GREEN}>> 已推送到 Telegram${PLAIN}"
-        else
-            echo -e "${RED}>> 推送失败! TG返回: $res${PLAIN}"
-        fi
-    fi
-}
-
-check_dependencies
-case "$1" in
-    install) install_script ;;
-    reset) rm -f "$CONFIG_FILE" "$STATE_FILE" "$DATE_FILE"; echo "已重置"; ;;
-    update) process_traffic "quiet" ;;
-    report) process_traffic "report" ;;
-    *) process_traffic "report" ;;
-esac
+    echo -e " ----------------------------------------
