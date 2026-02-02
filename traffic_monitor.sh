@@ -68,8 +68,7 @@ install_script() {
     read -p "2. 每月总流量限制 (GB) [默认: 1000]: " input_total
     TOTAL_LIMIT_GB=${input_total:-1000}
     
-    read -p "3. 当前已用流量 (GB) [默认: 0, 新机器直接回车]: " input_used
-    # 这里逻辑调整：直接问已用多少，方便计算
+    read -p "3. 当前已用流量 (GB) [默认: 0]: " input_used
     CURRENT_USED_GB=${input_used:-0}
     
     read -p "4. 每月重置日期 (1-31) [默认: 1]: " input_day
@@ -102,16 +101,14 @@ EOF
 
     # 初始化状态
     local counters=($(get_current_counters "$INTERFACE"))
-    # 初始已用量 (Bytes)
     local used_bytes=$(echo "$CURRENT_USED_GB * 1073741824" | bc)
     local today=$(date +%F)
     
-    # 状态文件: Rx Tx DailyRx DailyTx MonthUsed Date
     echo "${counters[0]} ${counters[1]} 0 0 $used_bytes $today" > "$STATE_FILE"
     
     echo -e "\n${GREEN}✔ 配置已保存！${PLAIN}"
     echo -e "${YELLOW}请务必设置 Crontab 定时任务以保证数据准确。${PLAIN}"
-    echo -e "例如: */5 * * * * bash /root/traffic_monitor.sh update"
+    echo -e "例如: */5 * * * * bash $(pwd)/traffic_monitor.sh update"
 }
 
 # --- 4. 核心逻辑 ---
@@ -134,65 +131,38 @@ process_traffic() {
     local curr_day_num=$(date +%-d)
     local current_mon_str=$(date +%Y-%m)
 
-    # 增量计算 (处理重启)
     local diff_rx=0
     local diff_tx=0
-    
-    if (( $(echo "$curr_rx < $last_rx" | bc -l) )); then
-        diff_rx=$curr_rx
-    else
-        diff_rx=$(echo "$curr_rx - $last_rx" | bc)
-    fi
+    if (( $(echo "$curr_rx < $last_rx" | bc -l) )); then diff_rx=$curr_rx; else diff_rx=$(echo "$curr_rx - $last_rx" | bc); fi
+    if (( $(echo "$curr_tx < $last_tx" | bc -l) )); then diff_tx=$curr_tx; else diff_tx=$(echo "$curr_tx - $last_tx" | bc); fi
 
-    if (( $(echo "$curr_tx < $last_tx" | bc -l) )); then
-        diff_tx=$curr_tx
-    else
-        diff_tx=$(echo "$curr_tx - $last_tx" | bc)
-    fi
-
-    # 跨天重置
-    if [ "$curr_date" != "$last_date" ]; then
-        daily_rx=0
-        daily_tx=0
-    fi
+    if [ "$curr_date" != "$last_date" ]; then daily_rx=0; daily_tx=0; fi
     daily_rx=$(echo "$daily_rx + $diff_rx" | bc)
     daily_tx=$(echo "$daily_tx + $diff_tx" | bc)
 
-    # 计费增量
     local billable_increment=0
-    if [ "$CALC_MODE" == "TX_ONLY" ]; then
-        billable_increment=$diff_tx
-    else
-        billable_increment=$(echo "$diff_rx + $diff_tx" | bc)
-    fi
+    if [ "$CALC_MODE" == "TX_ONLY" ]; then billable_increment=$diff_tx; else billable_increment=$(echo "$diff_rx + $diff_tx" | bc); fi
 
-    # 月度重置
-    local last_reset_mon=""
-    [ -f "$DATE_FILE" ] && last_reset_mon=$(cat "$DATE_FILE")
-    
+    local last_reset_mon=""; [ -f "$DATE_FILE" ] && last_reset_mon=$(cat "$DATE_FILE")
     if [ $curr_day_num -ge $RESET_DAY ] && [ "$last_reset_mon" != "$current_mon_str" ]; then
         month_used=0
         echo "$current_mon_str" > "$DATE_FILE"
     fi
-    
     month_used=$(echo "$month_used + $billable_increment" | bc)
 
-    # 保存状态
     echo "$curr_rx $curr_tx $daily_rx $daily_tx $month_used $curr_date" > "$STATE_FILE"
 
     [ "$mode" == "quiet" ] && return
 
-    # --- 生成报告 ---
+    # Report Generation
     local rx_gib=$(echo "scale=2; $daily_rx / 1073741824" | bc)
     local tx_gib=$(echo "scale=2; $daily_tx / 1073741824" | bc)
     local daily_total_gib=$(echo "scale=2; ($daily_rx + $daily_tx) / 1073741824" | bc)
-    
     local month_used_gib=$(echo "scale=2; $month_used / 1073741824" | bc)
     local total_bytes=$(echo "$TOTAL_LIMIT_GB * 1073741824" | bc)
     local remain_bytes=$(echo "$total_bytes - $month_used" | bc)
     if (( $(echo "$remain_bytes < 0" | bc -l) )); then remain_bytes=0; fi
     local remain_gib=$(echo "scale=2; $remain_bytes / 1073741824" | bc)
-    
     local server_name=$(hostname)
     local report_time=$(date "+%Y-%m-%d %H:%M:%S")
 
@@ -207,7 +177,6 @@ process_traffic() {
 📦 <b>本月已用:</b> ${month_used_gib} GiB%0A\
 🔋 <b>本月剩余:</b> ${remain_gib} GiB"
 
-    # 终端输出
     echo -e "${CYAN}========================================${PLAIN}"
     echo -e " 📊  流量统计报表"
     echo -e " ----------------------------------------"
@@ -219,17 +188,12 @@ process_traffic() {
     echo -e " 🔋  本月剩余: ${CYAN}${remain_gib} GiB${PLAIN}"
     echo -e "${CYAN}========================================${PLAIN}"
     
-    # TG 推送
     if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
-        curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
-            -d "chat_id=${TG_CHAT_ID}" \
-            -d "text=${MSG}" \
-            -d "parse_mode=HTML" > /dev/null
+        curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" -d "chat_id=${TG_CHAT_ID}" -d "text=${MSG}" -d "parse_mode=HTML" > /dev/null
         echo -e "${GREEN}>> 已推送到 Telegram${PLAIN}"
     fi
 }
 
-# --- 入口 ---
 check_dependencies
 case "$1" in
     install) install_script ;;
@@ -238,3 +202,4 @@ case "$1" in
     report) process_traffic "report" ;;
     *) process_traffic "report" ;;
 esac
+
