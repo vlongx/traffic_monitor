@@ -5,16 +5,16 @@
 ## 🚀 一键安装
 
 ```bash
-curl -so traffic.sh https://raw.githubusercontent.com/vlongx/traffic_monitor/main/traffic_monitor.sh && bash traffic.sh install
+curl -so traffic.sh https://raw.githubusercontent.com/vlongx/traffic_monitor/main/traffic_monitor.sh && bash traffic_monitor.sh install
 ```
 ⚙️ Crontab 定时任务 (必填)
 安装完成后，输入 crontab -e 添加以下内容，以防止重启丢失数据：
 ```bash
 # 每 5 分钟更新数据 (防止重启丢数据)
-*/5 * * * * bash /root/traffic.sh update > /dev/null 2>&1
+*/5 * * * * bash /root/traffic_monitor.sh update > /dev/null 2>&1
 
 # 每天 09:00 推送日报
-0 9 * * * bash /root/traffic.sh report > /dev/null 2>&1
+0 9 * * * bash /root/traffic_monitor.sh report > /dev/null 2>&1
 ```
 
 
