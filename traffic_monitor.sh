@@ -83,7 +83,6 @@ install_script() {
         *) CALC_MODE="BIDIRECTIONAL" ;;
     esac
 
-    # --- 新增：自定义服务器名称 ---
     local sys_hostname=$(hostname)
     read -p "6. 自定义服务器名称 [默认: $sys_hostname]: " input_name
     SERVER_NAME=${input_name:-$sys_hostname}
@@ -172,20 +171,24 @@ process_traffic() {
     
     local report_time=$(date "+%Y-%m-%d %H:%M:%S")
 
-    # 如果配置文件里没有 SERVER_NAME (旧版升级上来)，则回退到 hostname
     if [ -z "$SERVER_NAME" ]; then SERVER_NAME=$(hostname); fi
 
-    MSG="📊 <b>流量日报</b> 📊%0A%0A\
-🖥 <b>服务器:</b> ${SERVER_NAME}%0A\
-🕒 <b>时间:</b> ${report_time}%0A%0A\
-⬇️ <b>今日下载:</b> ${rx_gib} GiB%0A\
-⬆️ <b>今日上传:</b> ${tx_gib} GiB%0A\
-💰 <b>今日总计:</b> ${daily_total_gib} GiB%0A\
-%0A-------------------------%0A\
-🔄 <b>重置日期:</b> 每月 ${RESET_DAY} 日%0A\
-📦 <b>本月已用:</b> ${month_used_gib} GiB%0A\
+    # 【修复重点1】改用真实换行符，不再使用 %0A，让 curl 自动处理编码
+    MSG="📊 <b>流量日报</b> 📊
+
+🖥 <b>服务器:</b> ${SERVER_NAME}
+🕒 <b>时间:</b> ${report_time}
+
+⬇️ <b>今日下载:</b> ${rx_gib} GiB
+⬆️ <b>今日上传:</b> ${tx_gib} GiB
+💰 <b>今日总计:</b> ${daily_total_gib} GiB
+
+-------------------------
+🔄 <b>重置日期:</b> 每月 ${RESET_DAY} 日
+📦 <b>本月已用:</b> ${month_used_gib} GiB
 🔋 <b>本月剩余:</b> ${remain_gib} GiB"
 
+    # 终端输出保持不变
     echo -e "${CYAN}========================================${PLAIN}"
     echo -e " 📊  流量统计报表"
     echo -e " ----------------------------------------"
@@ -198,8 +201,19 @@ process_traffic() {
     echo -e "${CYAN}========================================${PLAIN}"
     
     if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
-        curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" -d "chat_id=${TG_CHAT_ID}" -d "text=${MSG}" -d "parse_mode=HTML" > /dev/null
-        echo -e "${GREEN}>> 已推送到 Telegram${PLAIN}"
+        # 【修复重点2】使用 --data-urlencode 处理空格和特殊符号，并捕获报错
+        res=$(curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+             -d "chat_id=${TG_CHAT_ID}" \
+             --data-urlencode "text=${MSG}" \
+             -d "parse_mode=HTML")
+        
+        # 检查返回值是否包含 ok:true
+        if [[ "$res" == *'"ok":true'* ]]; then
+            echo -e "${GREEN}>> 已推送到 Telegram${PLAIN}"
+        else
+            # 如果失败，打印红色错误信息
+            echo -e "${RED}>> 推送失败! TG返回: $res${PLAIN}"
+        fi
     fi
 }
 
