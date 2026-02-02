@@ -66,13 +66,14 @@ install_script() {
     INTERFACE=${input_iface:-$auto_iface}
     
     read -p "2. 每月总流量限制 (GB) [默认: 1000]: " input_total
-    TOTAL_LIMIT_GB=${input_total:-1000}
+    TOTAL_LIMIT_GB=$(echo "${input_total:-1000}" | tr -cd '0-9.') # 自动清洗非数字字符
     
     read -p "3. 当前已用流量 (GB) [默认: 0]: " input_used
-    CURRENT_USED_GB=${input_used:-0}
+    # 【修复重点】使用 tr 命令强制只保留数字和小数点，过滤中文符号
+    CURRENT_USED_GB=$(echo "${input_used:-0}" | tr -cd '0-9.')
     
     read -p "4. 每月重置日期 (1-31) [默认: 1]: " input_day
-    RESET_DAY=${input_day:-1}
+    RESET_DAY=$(echo "${input_day:-1}" | tr -cd '0-9')
     
     echo -e "5. 流量计算方式:"
     echo "   1) 双向计费 (上传 + 下载)"
@@ -89,9 +90,11 @@ install_script() {
 
     echo -e "${YELLOW}--- Telegram 配置 (可选，回车跳过) ---${PLAIN}"
     read -p "Telegram Bot Token: " input_token
-    TG_BOT_TOKEN=${input_token:-""}
+    # 自动去除非法空格
+    TG_BOT_TOKEN=$(echo "${input_token:-""}" | tr -d '[:space:]')
+    
     read -p "Telegram Chat ID: " input_chat_id
-    TG_CHAT_ID=${input_chat_id:-""}
+    TG_CHAT_ID=$(echo "${input_chat_id:-""}" | tr -d '[:space:]')
 
     # 写入配置
     cat > "$CONFIG_FILE" <<EOF
@@ -173,7 +176,6 @@ process_traffic() {
 
     if [ -z "$SERVER_NAME" ]; then SERVER_NAME=$(hostname); fi
 
-    # 【修复重点1】改用真实换行符，不再使用 %0A，让 curl 自动处理编码
     MSG="📊 <b>流量日报</b> 📊
 
 🖥 <b>服务器:</b> ${SERVER_NAME}
@@ -188,7 +190,6 @@ process_traffic() {
 📦 <b>本月已用:</b> ${month_used_gib} GiB
 🔋 <b>本月剩余:</b> ${remain_gib} GiB"
 
-    # 终端输出保持不变
     echo -e "${CYAN}========================================${PLAIN}"
     echo -e " 📊  流量统计报表"
     echo -e " ----------------------------------------"
@@ -201,17 +202,14 @@ process_traffic() {
     echo -e "${CYAN}========================================${PLAIN}"
     
     if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
-        # 【修复重点2】使用 --data-urlencode 处理空格和特殊符号，并捕获报错
         res=$(curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
              -d "chat_id=${TG_CHAT_ID}" \
              --data-urlencode "text=${MSG}" \
              -d "parse_mode=HTML")
         
-        # 检查返回值是否包含 ok:true
         if [[ "$res" == *'"ok":true'* ]]; then
             echo -e "${GREEN}>> 已推送到 Telegram${PLAIN}"
         else
-            # 如果失败，打印红色错误信息
             echo -e "${RED}>> 推送失败! TG返回: $res${PLAIN}"
         fi
     fi
