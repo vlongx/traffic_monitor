@@ -5,7 +5,7 @@
 ## 🚀 一键安装
 
 ```bash
-curl -so traffic.sh https://raw.githubusercontent.com/vlongx/traffic_monitor/main/traffic_monitor.sh && bash traffic_monitor.sh install
+curl -sL https://raw.githubusercontent.com/vlongx/traffic_monitor/main/traffic_monitor.sh -o traffic_monitor.sh && bash traffic_monitor.sh install
 ```
 ⚙️ Crontab 定时任务 (必填)
 安装完成后，输入 crontab -e 添加以下内容，以防止重启丢失数据：
