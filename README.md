@@ -17,4 +17,8 @@ curl -sL https://raw.githubusercontent.com/vlongx/traffic_monitor/main/traffic_m
 0 9 * * * bash /root/traffic_monitor.sh report > /dev/null 2>&1
 ```
 
+测试推送TG脚本：
+```bash
+bash traffic_monitor.sh report
+```
 
