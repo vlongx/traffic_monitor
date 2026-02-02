@@ -83,6 +83,11 @@ install_script() {
         *) CALC_MODE="BIDIRECTIONAL" ;;
     esac
 
+    # --- 新增：自定义服务器名称 ---
+    local sys_hostname=$(hostname)
+    read -p "6. 自定义服务器名称 [默认: $sys_hostname]: " input_name
+    SERVER_NAME=${input_name:-$sys_hostname}
+
     echo -e "${YELLOW}--- Telegram 配置 (可选，回车跳过) ---${PLAIN}"
     read -p "Telegram Bot Token: " input_token
     TG_BOT_TOKEN=${input_token:-""}
@@ -95,6 +100,7 @@ INTERFACE="$INTERFACE"
 TOTAL_LIMIT_GB="$TOTAL_LIMIT_GB"
 RESET_DAY="$RESET_DAY"
 CALC_MODE="$CALC_MODE"
+SERVER_NAME="$SERVER_NAME"
 TG_BOT_TOKEN="$TG_BOT_TOKEN"
 TG_CHAT_ID="$TG_CHAT_ID"
 EOF
@@ -163,11 +169,14 @@ process_traffic() {
     local remain_bytes=$(echo "$total_bytes - $month_used" | bc)
     if (( $(echo "$remain_bytes < 0" | bc -l) )); then remain_bytes=0; fi
     local remain_gib=$(echo "scale=2; $remain_bytes / 1073741824" | bc)
-    local server_name=$(hostname)
+    
     local report_time=$(date "+%Y-%m-%d %H:%M:%S")
 
+    # 如果配置文件里没有 SERVER_NAME (旧版升级上来)，则回退到 hostname
+    if [ -z "$SERVER_NAME" ]; then SERVER_NAME=$(hostname); fi
+
     MSG="📊 <b>流量日报</b> 📊%0A%0A\
-🖥 <b>服务器:</b> ${server_name}%0A\
+🖥 <b>服务器:</b> ${SERVER_NAME}%0A\
 🕒 <b>时间:</b> ${report_time}%0A%0A\
 ⬇️ <b>今日下载:</b> ${rx_gib} GiB%0A\
 ⬆️ <b>今日上传:</b> ${tx_gib} GiB%0A\
@@ -180,7 +189,7 @@ process_traffic() {
     echo -e "${CYAN}========================================${PLAIN}"
     echo -e " 📊  流量统计报表"
     echo -e " ----------------------------------------"
-    echo -e " 🖥  服务器:   $server_name"
+    echo -e " 🖥  服务器:   $SERVER_NAME"
     echo -e " ⬇️  今日下载: ${GREEN}${rx_gib} GiB${PLAIN}"
     echo -e " ⬆️  今日上传: ${GREEN}${tx_gib} GiB${PLAIN}"
     echo -e " 💰  今日总计: ${YELLOW}${daily_total_gib} GiB${PLAIN}"
@@ -202,4 +211,3 @@ case "$1" in
     report) process_traffic "report" ;;
     *) process_traffic "report" ;;
 esac
-
